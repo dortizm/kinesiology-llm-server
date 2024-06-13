@@ -1,0 +1,45 @@
+version: '3'
+
+services:
+
+  ollama:
+    image: ollama/ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    ports:
+      - "11434:11434"
+    networks:
+      - mynetwork
+
+  langserve:
+    image: langserve:latest
+    build:
+      context: ./langserve
+    container_name: langserve
+    ports:
+      - "8001:8001"
+    networks:
+      - mynetwork
+
+  chroma:
+    image: ghcr.io/chroma-core/chroma:latest
+    hostname: chroma
+    volumes:
+      - index_data:/chroma/.chroma/index
+    ports:
+      - "8000:8000"
+    networks:
+      - mynetwork
+
+networks:
+  mynetwork:
+    driver: bridge
+
+volumes:
+  index_data:
+    driver: local

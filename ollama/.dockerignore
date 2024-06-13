@@ -1,0 +1,8 @@
+.vscode
+ollama
+app
+dist
+llm/llama.cpp/gguf
+.env
+.cache
+test_data

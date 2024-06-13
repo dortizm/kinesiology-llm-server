@@ -1,0 +1,13 @@
+streamlit
+openai
+streamlit-chat
+langchain
+pypdf
+fastembed==0.2.2
+chromadb
+langserve
+sse_starlette
+sentence-transformers
+langchain-community
+langgraph
+langchainhub
