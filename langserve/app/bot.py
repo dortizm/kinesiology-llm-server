@@ -32,13 +32,6 @@ def format_docs(docs):
 
 
 
-# Function to clean up the response
-def clean_translation(response):
-    # Remove any text that appears after a known marker, like "Translation:"
-    cleaned_response = re.split(r'(Translation:|Here\'s the translated text|In Spanish°)', response, 1)[0]
-    return cleaned_response.strip()
-
-
 def retrieve(state):
     """
     Retrieve documents
@@ -182,6 +175,23 @@ def translate_query(state):
     translate_generation = translate_chain.invoke({"question": generation})
     return {"generation": translate_generation}
 
+def formal_query(state):
+    """
+    Generar respuesta
+    Args:
+        state (dict): El estado actual del grafo
+    Returns:
+        state (dict): Nueva clave añadida al estado, generación, que contiene la generación del LLM
+    """
+    print("---FORMAL---")
+    generation = state["generation"]
+    context = state["documents"]
+    #context = "The following is a conversation with an artificial intelligence research assistant. The assistant's responses should be easy to understand even for elementary school students and should not exceed 3 lines. Only do what the question asks."
+    # Generación RAG
+    #question= "translate this English text into Spanish: " + question
+    formal_generation = formal_chain.invoke({"question": generation})
+    return {"generation": formal_generation}
+    
 embedding_function = SentenceTransformerEmbeddings(model_name="all-MiniLM-L6-v2")
 chroma_client = chromadb.HttpClient(settings=Settings(allow_reset=True),host='chroma', port=8000)
 langchainChroma = Chroma(client = chroma_client, persist_directory="./chroma_db", collection_name = 'kinesiology_plus', embedding_function=embedding_function)
@@ -203,6 +213,8 @@ prompt = PromptTemplate(
 retrieval_grader = prompt | llm | JsonOutputParser()
 
 # Generate
+#_prompt = hub.pull("rlm/rag-prompt")
+mistra_prompt = hub.pull("rlm/rag-prompt-mistral")
 
 g_prompt = PromptTemplate(
     template="""You are an assistant for question-answering tasks. Use the following pieces of retrieved context to answer the question.
@@ -215,7 +227,7 @@ g_prompt = PromptTemplate(
     input_variables=["question", "context"],
 )
 
-rag_chain = g_prompt | llm | StrOutputParser()
+rag_chain = mistra_prompt | llm | StrOutputParser()
 
 # Hallucination Grader
 prompt = PromptTemplate(
@@ -267,20 +279,55 @@ question_rewriter = re_write_prompt | llm | StrOutputParser()
 
 # Translate Query
 
-t_prompt = PromptTemplate(
-    template="""You are a translator converting medical text from English to Chilean Spanish. The translation should be clear and accessible for patients who are not healthcare professionals.
+# Function to clean up the response
+def clean_translation(response):
+    # Remove any text that appears after a known marker, like "Translation:"
+    print("_____________clean_translation_____________")
+    print("_____________response_____________")
+    cleaned_response = re.split(r'(Translation:|Here\'s the translated text|In Spanish°)', response, 1)[0]
+    print("_____________cleaned_response_____________")
+    return cleaned_response.strip()
 
-    Keep the original format and do not include any notes, explanations, references, symbols, numbers, or English text.
+
+t_prompt = PromptTemplate(
+    template="""You are a translator converting medical text from English to Spanish. The translation should be clear and precise, without including citations or sources from the documents, and accessible for patients who are not healthcare professionals.
+
+    Translate the following text into Spanish. Do not include any notes, explanations, references, symbols, numbers, sources, or English text.
 
     Here is the text in English:
     -------
     {question}
     -------
-    """,
+    Provide the translated text in Spanish, keeping the original format.""",
     input_variables=["question"],
 )
 
 translate_chain = t_prompt | llm | StrOutputParser() | clean_translation
+
+
+
+# Define darle formato al texto
+
+
+
+formal_prompt = PromptTemplate(
+    template="""You are a healthcare professional who converts poorly written Spanish medical text into clear and patient-friendly Spanish. The explanation should be precise, using comprehensible terminology and an explanatory and approachable tone suitable for patients.
+
+    Transform the following text into a clear and explanatory style, removing any sources, notes, explanations, references, symbols, numbers, and English text. If any condition related to the knee joint is mentioned, always use "artrosis de rodilla".
+
+    Here is the poorly written Spanish text:
+    -------
+    {question}
+    -------
+    Provide the transformed explanation in clear and patient-friendly Spanish.""",
+    input_variables=["question"],
+)
+
+
+
+
+formal_chain = formal_prompt | llm | StrOutputParser()
+
 
 
 
@@ -293,6 +340,8 @@ workflow.add_node("grade_documents", grade_documents)  # grade documents
 workflow.add_node("generate", generate)  # generate
 workflow.add_node("transform_query", transform_query)  # transform_query
 workflow.add_node("translate_query", translate_query)  # translate_query
+workflow.add_node("formal_query", formal_query)  # formal_query
+
 
 # Construir el grafo
 workflow.set_entry_point("retrieve")
@@ -315,7 +364,8 @@ workflow.add_conditional_edges(
         "not useful": "transform_query",
     },
 )
-workflow.set_finish_point("translate_query")
+workflow.add_edge("translate_query", "formal_query")
+workflow.set_finish_point("formal_query")
 
 # Compilar
 bot = workflow.compile()
